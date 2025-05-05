@@ -2,55 +2,10 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Связь с оператором</title>
-  <style>
-    body {
-      background: #f8f8f8;
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 50px 20px;
-      color: #333;
-    }
-    .container {
-      max-width: 500px;
-      margin: auto;
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    h1 {
-      margin-bottom: 0.5em;
-      font-size: 26px;
-    }
-    p {
-      font-size: 16px;
-      color: #555;
-    }
-    .loader {
-      margin: 20px auto;
-      width: 40px;
-      height: 40px;
-      border: 5px solid #ccc;
-      border-top-color: #333;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-  </style>
+  <title>Виджет</title>
 </head>
-<body>
-  <div class="container">
-    <h1>Связь с оператором</h1>
-    <p>Пожалуйста, опишите ваш заказ. Мы всё запишем и подготовим.</p>
-    
-    <div class="loader"></div>
-
-    <elevenlabs-convai agent-id="TkWRipm4L5nToEGXcKA6"></elevenlabs-convai>
-    <script src="https://elevenlabs.io/convai-widget/index.js" async type="text/javascript"></script>
-  </div>
+<body style="margin:0;">
+  <elevenlabs-convai agent-id="TkWRipm4L5nToEGXcKA6"></elevenlabs-convai>
+  <script src="https://elevenlabs.io/convai-widget/index.js" async></script>
 </body>
 </html>
