@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>Internal Map Tool</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin=""/>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container">
+        <div class="login-box">
+            <h1>Internal Map Tool</h1>
+            <p>Please sign in to continue</p>
+            <form id="login-form" class="login-form">
+                <input type="text" id="username" placeholder="Username" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button type="submit" id="login-btn" class="login-btn">Login</button>
+            </form>
+            <div id="login-error" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="main-app" class="main-container" style="display: none;">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1>Internal Map Tool</h1>
+                <span id="user-role" class="role-badge"></span>
+            </div>
+            <div class="header-right">
+                <span id="user-email" class="user-info"></span>
+                <button id="export-btn" class="action-btn">Export</button>
+                <button id="import-btn" class="action-btn">Import</button>
+                <button id="signout-btn" class="signout-btn">Sign Out</button>
+            </div>
+        </header>
+
+        <!-- Map Container -->
+        <div id="map" class="map-container"></div>
+
+        <!-- Controls Panel -->
+        <div id="controls-panel" class="controls-panel">
+            <div class="control-group">
+                <h3>Map Tools</h3>
+                <button id="add-point-btn" class="tool-btn active">Add Point</button>
+                <button id="draw-line-btn" class="tool-btn">Draw Power Line</button>
+                <button id="clear-selection-btn" class="tool-btn">Clear Selection</button>
+            </div>
+            
+            <div class="control-group" id="point-form" style="display: none;">
+                <h3>Point Details</h3>
+                <input type="text" id="point-title" placeholder="Point title" maxlength="100">
+                <textarea id="point-note" placeholder="Notes" maxlength="500"></textarea>
+                <button id="save-point-btn" class="save-btn">Save Point</button>
+                <button id="cancel-point-btn" class="cancel-btn">Cancel</button>
+            </div>
+            
+            <div class="control-group" id="line-form" style="display: none;">
+                <h3>Power Line Details</h3>
+                <input type="text" id="line-label" placeholder="Line label" maxlength="100">
+                <p class="instruction">Click two points on the map to draw a power line</p>
+                <button id="save-line-btn" class="save-btn" disabled>Save Line</button>
+                <button id="cancel-line-btn" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Hidden file input for import -->
+        <input type="file" id="import-file" accept=".json" style="display: none;">
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+            crossorigin=""></script>
+    
+    <!-- Custom JS -->
+    <script src="script.js"></script>
+</body>
+</html>
+
