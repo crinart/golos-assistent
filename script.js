@@ -1,658 +1,907 @@
 /**
- * Internal Map Tool - Main Application Script
- * Pure ES6, no bundlers, functions ≤ 50 lines
- * Local authentication system with SHA-256 password hashing
+ * Внутренний инструмент карт - Основной JavaScript файл
+ * Интеграция с Supabase для аутентификации и хранения данных
  */
 
-// Global application state
-const AppState = {
-    map: null,
-    isLoggedIn: false,
-    userRole: 'editor', // All authenticated users are editors
-    currentTool: 'point',
-    tempMarkers: [],
-    linePoints: [],
-    mapData: {
-        points: [],
-        lines: []
-    }
-};
+// Конфигурация Supabase
+const SUPABASE_URL = "https://roifbqxbocdzfnjipstl.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvaWZicXhib2NkemZuamlwc3RsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3ODMwOTcsImV4cCI6MjA2ODM1OTA5N30.zEXZeKdGxiSfzDfd-E-CyE0Sp3Ut2tWIhTZ1VW_v6kE";
 
-// Authentication credentials (SHA-256 hashed password)
-const AUTH_CONFIG = {
-    username: 'Crinart',
-    passwordHash: 'd117614e560a9e782c09856b725c2ab6a59779cd6079c8534950e0691fe4a24b' // SHA-256 of "252061qQ"
-};
+// Инициализация Supabase клиента
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Глобальные переменные
+let map;
+let currentUser = null;
+let points = [];
+let lines = [];
+let selectedPoints = [];
+let isDrawingLine = false;
+let currentMarker = null;
+
+// Инициализация приложения
+document.addEventListener('DOMContentLoaded', async () => {
+    await initializeApp();
+});
 
 /**
- * Calculate SHA-256 hash of input string
+ * Инициализация приложения
  */
-async function sha256(message) {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+async function initializeApp() {
+    try {
+        // Проверка текущей сессии
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+            currentUser = session.user;
+            await showMainApp();
+        } else {
+            showLoginScreen();
+        }
+        
+        // Слушатель изменений аутентификации
+        supabase.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                currentUser = session.user;
+                await showMainApp();
+            } else if (event === 'SIGNED_OUT') {
+                currentUser = null;
+                showLoginScreen();
+            }
+        });
+        
+        setupEventListeners();
+    } catch (error) {
+        console.error('Ошибка инициализации:', error);
+        showError('Ошибка инициализации приложения');
+    }
 }
 
 /**
- * Handle login form submission
+ * Настройка обработчиков событий
  */
-async function handleLogin(event) {
-    event.preventDefault();
+function setupEventListeners() {
+    // Форма входа
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
     
-    const username = document.getElementById('username').value.trim();
+    // Кнопки заголовка
+    document.getElementById('search-btn')?.addEventListener('click', handleSearch);
+    document.getElementById('search-input')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleSearch();
+    });
+    document.getElementById('export-btn')?.addEventListener('click', exportData);
+    document.getElementById('import-btn')?.addEventListener('click', () => {
+        document.getElementById('import-file').click();
+    });
+    document.getElementById('import-file')?.addEventListener('change', importData);
+    document.getElementById('signout-btn')?.addEventListener('click', handleSignOut);
+    
+    // Кнопки инструментов
+    document.getElementById('add-point-btn')?.addEventListener('click', startAddPoint);
+    document.getElementById('draw-line-btn')?.addEventListener('click', startDrawLine);
+    document.getElementById('clear-selection-btn')?.addEventListener('click', clearSelection);
+    document.getElementById('add-by-coords-btn')?.addEventListener('click', showCoordsModal);
+    document.getElementById('center-map-btn')?.addEventListener('click', centerMap);
+    document.getElementById('clear-all-btn')?.addEventListener('click', clearAllData);
+    
+    // Модальные окна
+    setupModalListeners();
+}
+
+/**
+ * Настройка обработчиков модальных окон
+ */
+function setupModalListeners() {
+    // Закрытие модальных окон
+    document.querySelectorAll('.modal-close').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const modal = e.target.closest('.modal');
+            hideModal(modal.id);
+        });
+    });
+    
+    // Закрытие по клику вне модального окна
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                hideModal(modal.id);
+            }
+        });
+    });
+    
+    // Кнопки модальных окон
+    document.getElementById('save-point-btn')?.addEventListener('click', savePoint);
+    document.getElementById('cancel-point-btn')?.addEventListener('click', () => hideModal('point-modal'));
+    
+    document.getElementById('save-coord-point-btn')?.addEventListener('click', saveCoordPoint);
+    document.getElementById('cancel-coord-btn')?.addEventListener('click', () => hideModal('coords-modal'));
+    
+    document.getElementById('save-line-btn')?.addEventListener('click', saveLine);
+    document.getElementById('finish-line-btn')?.addEventListener('click', finishLineSelection);
+    document.getElementById('cancel-line-btn')?.addEventListener('click', cancelLineDrawing);
+    
+    document.getElementById('error-ok-btn')?.addEventListener('click', () => hideModal('error-modal'));
+}
+
+/**
+ * Обработка входа в систему
+ */
+async function handleLogin(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
     
-    // Clear any previous error messages
-    hideLoginError();
-    
-    // Validate credentials
-    if (username === AUTH_CONFIG.username) {
-        const passwordHash = await sha256(password);
-        if (passwordHash === AUTH_CONFIG.passwordHash) {
-            // Successful login
-            AppState.isLoggedIn = true;
-            showMainApp();
-            return;
-        }
+    if (!email || !password) {
+        showLoginError('Пожалуйста, заполните все поля');
+        return;
     }
     
-    // Failed login
-    showLoginError('Incorrect login or password.');
+    showLoading(true);
+    
+    try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email,
+            password: password
+        });
+        
+        if (error) {
+            throw error;
+        }
+        
+        // Успешный вход будет обработан в onAuthStateChange
+    } catch (error) {
+        console.error('Ошибка входа:', error);
+        showLoginError('Неверный email или пароль');
+    } finally {
+        showLoading(false);
+    }
 }
 
 /**
- * Show login screen
+ * Выход из системы
+ */
+async function handleSignOut() {
+    try {
+        showLoading(true);
+        await supabase.auth.signOut();
+    } catch (error) {
+        console.error('Ошибка выхода:', error);
+        showError('Ошибка при выходе из системы');
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Показать экран входа
  */
 function showLoginScreen() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('main-app').style.display = 'none';
+    document.getElementById('login-error').style.display = 'none';
     
-    // Clear form fields
-    document.getElementById('username').value = '';
+    // Очистка формы
+    document.getElementById('email').value = '';
     document.getElementById('password').value = '';
-    hideLoginError();
 }
 
 /**
- * Show main application
+ * Показать основное приложение
  */
-function showMainApp() {
+async function showMainApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'flex';
     
-    // Update UI with user info (local login system)
-    document.getElementById('user-email').textContent = AUTH_CONFIG.username;
-    const roleBadge = document.getElementById('user-role');
-    roleBadge.textContent = AppState.userRole;
-    roleBadge.className = `role-badge ${AppState.userRole}`;
-    
-    // Initialize map if not already done
-    if (!AppState.map) {
-        initMap();
+    // Отображение email пользователя
+    const userEmailElement = document.getElementById('user-email');
+    if (userEmailElement && currentUser) {
+        userEmailElement.textContent = currentUser.email;
     }
     
-    // Load saved data
-    loadMapData();
-}
-
-/**
- * Show login error message
- */
-function showLoginError(message) {
-    const errorDiv = document.getElementById('login-error');
-    errorDiv.textContent = message;
-    errorDiv.style.display = 'block';
-}
-
-/**
- * Hide login error message
- */
-function hideLoginError() {
-    const errorDiv = document.getElementById('login-error');
-    errorDiv.style.display = 'none';
-}
-
-/**
- * Sign out current user
- */
-function signOut() {
-    AppState.isLoggedIn = false;
-    AppState.userRole = 'editor';
-    showLoginScreen();
-}
-
-/**
- * Initialize Leaflet map
- */
-function initMap() {
-    // Create map centered on a default location
-    AppState.map = L.map('map').setView([40.7128, -74.0060], 10);
+    // Инициализация карты
+    if (!map) {
+        initializeMap();
+    }
     
-    // Add OpenStreetMap tiles
+    // Загрузка данных
+    await loadData();
+}
+
+/**
+ * Инициализация карты Leaflet
+ */
+function initializeMap() {
+    // Создание карты с центром в Москве
+    map = L.map('map').setView([55.7558, 37.6176], 10);
+    
+    // Добавление слоя OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-    }).addTo(AppState.map);
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
     
-    // Add click handler for adding points
-    AppState.map.on('click', handleMapClick);
+    // Обработчик клика по карте
+    map.on('click', handleMapClick);
 }
 
 /**
- * Handle map click events
+ * Обработка клика по карте
  */
 function handleMapClick(e) {
-    if (!AppState.isLoggedIn) return;
-    
-    if (AppState.currentTool === 'point') {
-        showPointForm(e.latlng);
-    } else if (AppState.currentTool === 'line') {
-        handleLineClick(e.latlng);
-    }
-}
-
-/**
- * Show point creation form
- */
-function showPointForm(latlng) {
-    // Clear any existing temp markers
-    clearTempMarkers();
-    
-    // Add temporary marker
-    const tempMarker = L.marker(latlng).addTo(AppState.map);
-    AppState.tempMarkers.push(tempMarker);
-    
-    // Show form
-    document.getElementById('point-form').style.display = 'block';
-    document.getElementById('line-form').style.display = 'none';
-    
-    // Store coordinates for later use
-    AppState.tempPointCoords = latlng;
-    
-    // Focus on title input
-    document.getElementById('point-title').focus();
-}
-
-/**
- * Handle line drawing clicks
- */
-function handleLineClick(latlng) {
-    AppState.linePoints.push(latlng);
-    
-    // Add temporary marker
-    const tempMarker = L.marker(latlng, {
-        icon: L.divIcon({
-            className: 'line-point-marker',
-            html: `<div style="background: #ff6b6b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
-        })
-    }).addTo(AppState.map);
-    AppState.tempMarkers.push(tempMarker);
-    
-    if (AppState.linePoints.length === 2) {
-        // Draw temporary line
-        const tempLine = L.polyline(AppState.linePoints, {
-            color: '#ff6b6b',
-            weight: 3,
-            dashArray: '5, 5'
-        }).addTo(AppState.map);
-        AppState.tempMarkers.push(tempLine);
-        
-        // Enable save button
-        document.getElementById('save-line-btn').disabled = false;
-    }
-}
-
-/**
- * Save new point
- */
-function savePoint() {
-    const title = document.getElementById('point-title').value.trim();
-    const note = document.getElementById('point-note').value.trim();
-    
-    if (!title) {
-        alert('Please enter a title for the point');
-        return;
-    }
-    
-    const point = {
-        id: generateId(),
-        title,
-        note,
-        lat: AppState.tempPointCoords.lat,
-        lng: AppState.tempPointCoords.lng,
-        timestamp: Date.now()
-    };
-    
-    AppState.mapData.points.push(point);
-    addPointToMap(point);
-    saveMapData();
-    cancelPointForm();
-}
-
-/**
- * Save new power line
- */
-function saveLine() {
-    const label = document.getElementById('line-label').value.trim();
-    
-    if (!label) {
-        alert('Please enter a label for the power line');
-        return;
-    }
-    
-    const line = {
-        id: generateId(),
-        label,
-        points: AppState.linePoints.map(p => ({ lat: p.lat, lng: p.lng })),
-        timestamp: Date.now()
-    };
-    
-    AppState.mapData.lines.push(line);
-    addLineToMap(line);
-    saveMapData();
-    cancelLineForm();
-}
-
-/**
- * Cancel point form
- */
-function cancelPointForm() {
-    document.getElementById('point-form').style.display = 'none';
-    document.getElementById('point-title').value = '';
-    document.getElementById('point-note').value = '';
-    clearTempMarkers();
-    AppState.tempPointCoords = null;
-}
-
-/**
- * Cancel line form
- */
-function cancelLineForm() {
-    document.getElementById('line-form').style.display = 'none';
-    document.getElementById('line-label').value = '';
-    document.getElementById('save-line-btn').disabled = true;
-    clearTempMarkers();
-    AppState.linePoints = [];
-}
-
-/**
- * Clear temporary markers and lines
- */
-function clearTempMarkers() {
-    AppState.tempMarkers.forEach(marker => {
-        AppState.map.removeLayer(marker);
-    });
-    AppState.tempMarkers = [];
-}
-
-/**
- * Add point to map
- */
-function addPointToMap(point) {
-    const marker = L.marker([point.lat, point.lng])
-        .bindPopup(createPointPopup(point))
-        .addTo(AppState.map);
-    
-    // Store reference for later removal
-    point.mapLayer = marker;
-}
-
-/**
- * Add line to map
- */
-function addLineToMap(line) {
-    const polyline = L.polyline(
-        line.points.map(p => [p.lat, p.lng]),
-        {
-            color: '#007bff',
-            weight: 4,
-            opacity: 0.8
+    if (isDrawingLine) {
+        // Режим рисования линии - добавляем точку к выбранным
+        const nearestPoint = findNearestPoint(e.latlng);
+        if (nearestPoint && !selectedPoints.includes(nearestPoint.id)) {
+            selectedPoints.push(nearestPoint.id);
+            highlightSelectedPoints();
+            updateSelectedPointsCount();
         }
-    ).bindPopup(createLinePopup(line))
-     .addTo(AppState.map);
+    } else {
+        // Обычный режим - показываем модальное окно для добавления точки
+        currentMarker = e.latlng;
+        showModal('point-modal');
+    }
+}
+
+/**
+ * Поиск ближайшей точки к координатам
+ */
+function findNearestPoint(latlng, maxDistance = 0.001) {
+    let nearest = null;
+    let minDistance = maxDistance;
     
-    // Store reference for later removal
-    line.mapLayer = polyline;
-}
-
-/**
- * Create popup content for points
- */
-function createPointPopup(point) {
-    const editButtons = `
-        <div class="popup-actions">
-            <button class="popup-btn edit" onclick="editPoint('${point.id}')">Edit</button>
-            <button class="popup-btn delete" onclick="deletePoint('${point.id}')">Delete</button>
-        </div>`;
-    
-    return `
-        <div class="popup-title">${escapeHtml(point.title)}</div>
-        <div class="popup-note">${escapeHtml(point.note)}</div>
-        ${editButtons}
-    `;
-}
-
-/**
- * Create popup content for lines
- */
-function createLinePopup(line) {
-    const editButtons = `
-        <div class="popup-actions">
-            <button class="popup-btn edit" onclick="editLine('${line.id}')">Edit</button>
-            <button class="popup-btn delete" onclick="deleteLine('${line.id}')">Delete</button>
-        </div>`;
-    
-    return `
-        <div class="popup-title">Power Line: ${escapeHtml(line.label)}</div>
-        ${editButtons}
-    `;
-}
-
-/**
- * Generate unique ID
- */
-function generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
-
-/**
- * Escape HTML to prevent XSS
- */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-/**
- * Set current tool
- */
-function setTool(tool) {
-    AppState.currentTool = tool;
-    
-    // Update button states
-    document.querySelectorAll('.tool-btn').forEach(btn => {
-        btn.classList.remove('active');
+    points.forEach(point => {
+        const distance = Math.sqrt(
+            Math.pow(point.lat - latlng.lat, 2) + 
+            Math.pow(point.lng - latlng.lng, 2)
+        );
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearest = point;
+        }
     });
     
-    if (tool === 'point') {
-        document.getElementById('add-point-btn').classList.add('active');
-        document.getElementById('line-form').style.display = 'none';
-    } else if (tool === 'line') {
-        document.getElementById('draw-line-btn').classList.add('active');
-        document.getElementById('point-form').style.display = 'none';
-        document.getElementById('line-form').style.display = 'block';
-    }
-    
-    // Clear any ongoing operations
-    cancelPointForm();
-    cancelLineForm();
+    return nearest;
 }
 
 /**
- * Clear current selection
+ * Загрузка данных из Supabase
+ */
+async function loadData() {
+    try {
+        showLoading(true);
+        
+        // Загрузка точек
+        const { data: pointsData, error: pointsError } = await supabase
+            .from('points')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (pointsError) throw pointsError;
+        
+        // Загрузка линий
+        const { data: linesData, error: linesError } = await supabase
+            .from('lines')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (linesError) throw linesError;
+        
+        points = pointsData || [];
+        lines = linesData || [];
+        
+        renderMapData();
+        updateStatusMessage();
+        
+    } catch (error) {
+        console.error('Ошибка загрузки данных:', error);
+        showError('Ошибка загрузки данных из базы');
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Отрисовка данных на карте
+ */
+function renderMapData() {
+    // Очистка существующих слоев
+    map.eachLayer(layer => {
+        if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+            map.removeLayer(layer);
+        }
+    });
+    
+    // Отрисовка точек
+    points.forEach(point => {
+        const marker = L.circleMarker([point.lat, point.lng], {
+            radius: 6,
+            fillColor: selectedPoints.includes(point.id) ? '#ffc107' : '#007bff',
+            color: '#fff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+        }).addTo(map);
+        
+        // Всплывающая подсказка
+        marker.bindPopup(`
+            <strong>${point.title}</strong><br>
+            ${point.comment || 'Без комментария'}<br>
+            <small>Координаты: ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}</small>
+        `);
+        
+        // Сохранение ID точки в маркере
+        marker.pointId = point.id;
+    });
+    
+    // Отрисовка линий
+    lines.forEach(line => {
+        if (line.point_ids && line.point_ids.length >= 2) {
+            const linePoints = line.point_ids.map(pointId => {
+                const point = points.find(p => p.id === pointId);
+                return point ? [point.lat, point.lng] : null;
+            }).filter(Boolean);
+            
+            if (linePoints.length >= 2) {
+                const polyline = L.polyline(linePoints, {
+                    color: '#28a745',
+                    weight: 3,
+                    opacity: 0.8
+                }).addTo(map);
+                
+                polyline.bindPopup(`<strong>${line.name}</strong><br>Точек: ${linePoints.length}`);
+            }
+        }
+    });
+}
+
+/**
+ * Начать добавление точки
+ */
+function startAddPoint() {
+    showError('Кликните по карте, чтобы добавить точку');
+}
+
+/**
+ * Начать рисование линии
+ */
+function startDrawLine() {
+    if (points.length < 2) {
+        showError('Для создания линии нужно минимум 2 точки');
+        return;
+    }
+    
+    isDrawingLine = true;
+    selectedPoints = [];
+    showModal('line-modal');
+    updateSelectedPointsCount();
+    
+    // Изменение стиля кнопки
+    const btn = document.getElementById('draw-line-btn');
+    btn.textContent = 'Выберите точки на карте';
+    btn.style.background = '#ffc107';
+}
+
+/**
+ * Завершить выбор точек для линии
+ */
+function finishLineSelection() {
+    if (selectedPoints.length < 2) {
+        showError('Выберите минимум 2 точки для создания линии');
+        return;
+    }
+    
+    // Скрыть кнопку "Завершить выбор"
+    document.getElementById('finish-line-btn').style.display = 'none';
+}
+
+/**
+ * Сохранить линию
+ */
+async function saveLine() {
+    const lineName = document.getElementById('line-name').value.trim();
+    
+    if (!lineName) {
+        showError('Введите название линии');
+        return;
+    }
+    
+    if (selectedPoints.length < 2) {
+        showError('Выберите минимум 2 точки');
+        return;
+    }
+    
+    try {
+        showLoading(true);
+        
+        const { data, error } = await supabase
+            .from('lines')
+            .insert([{
+                name: lineName,
+                point_ids: selectedPoints,
+                user_id: currentUser.id
+            }])
+            .select();
+        
+        if (error) throw error;
+        
+        // Добавление в локальный массив
+        lines.push(data[0]);
+        
+        // Сброс состояния
+        cancelLineDrawing();
+        
+        // Перерисовка карты
+        renderMapData();
+        updateStatusMessage();
+        
+        hideModal('line-modal');
+        
+    } catch (error) {
+        console.error('Ошибка сохранения линии:', error);
+        showError('Ошибка сохранения линии');
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Отменить рисование линии
+ */
+function cancelLineDrawing() {
+    isDrawingLine = false;
+    selectedPoints = [];
+    
+    // Восстановление стиля кнопки
+    const btn = document.getElementById('draw-line-btn');
+    btn.textContent = 'Нарисовать линию';
+    btn.style.background = '#28a745';
+    
+    renderMapData();
+    hideModal('line-modal');
+}
+
+/**
+ * Очистить выбор
  */
 function clearSelection() {
-    cancelPointForm();
-    cancelLineForm();
-    setTool('point');
+    selectedPoints = [];
+    isDrawingLine = false;
+    
+    // Восстановление стиля кнопки
+    const btn = document.getElementById('draw-line-btn');
+    btn.textContent = 'Нарисовать линию';
+    btn.style.background = '#28a745';
+    
+    renderMapData();
 }
 
 /**
- * Save map data to localStorage
+ * Подсветить выбранные точки
  */
-function saveMapData() {
-    try {
-        localStorage.setItem('mapData', JSON.stringify(AppState.mapData));
-    } catch (error) {
-        console.error('Error saving data:', error);
-        alert('Failed to save data locally');
+function highlightSelectedPoints() {
+    renderMapData();
+}
+
+/**
+ * Обновить счетчик выбранных точек
+ */
+function updateSelectedPointsCount() {
+    const countElement = document.getElementById('selected-points-count');
+    if (countElement) {
+        countElement.textContent = selectedPoints.length;
     }
 }
 
 /**
- * Load map data from localStorage
+ * Сохранить точку
  */
-function loadMapData() {
+async function savePoint() {
+    const title = document.getElementById('point-title').value.trim();
+    const comment = document.getElementById('point-comment').value.trim();
+    
+    if (!title) {
+        showError('Введите название точки');
+        return;
+    }
+    
+    if (!currentMarker) {
+        showError('Выберите место на карте');
+        return;
+    }
+    
     try {
-        const saved = localStorage.getItem('mapData');
-        if (saved) {
-            AppState.mapData = JSON.parse(saved);
+        showLoading(true);
+        
+        const { data, error } = await supabase
+            .from('points')
+            .insert([{
+                title: title,
+                comment: comment,
+                lat: currentMarker.lat,
+                lng: currentMarker.lng,
+                user_id: currentUser.id
+            }])
+            .select();
+        
+        if (error) throw error;
+        
+        // Добавление в локальный массив
+        points.push(data[0]);
+        
+        // Очистка формы
+        document.getElementById('point-title').value = '';
+        document.getElementById('point-comment').value = '';
+        currentMarker = null;
+        
+        // Перерисовка карты
+        renderMapData();
+        updateStatusMessage();
+        
+        hideModal('point-modal');
+        
+    } catch (error) {
+        console.error('Ошибка сохранения точки:', error);
+        showError('Ошибка сохранения точки');
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Показать модальное окно координат
+ */
+function showCoordsModal() {
+    showModal('coords-modal');
+}
+
+/**
+ * Сохранить точку по координатам
+ */
+async function saveCoordPoint() {
+    const lat = parseFloat(document.getElementById('coord-lat').value);
+    const lng = parseFloat(document.getElementById('coord-lng').value);
+    const title = document.getElementById('coord-title').value.trim();
+    const comment = document.getElementById('coord-comment').value.trim();
+    
+    if (isNaN(lat) || isNaN(lng)) {
+        showError('Введите корректные координаты');
+        return;
+    }
+    
+    if (!title) {
+        showError('Введите название точки');
+        return;
+    }
+    
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        showError('Координаты вне допустимого диапазона');
+        return;
+    }
+    
+    try {
+        showLoading(true);
+        
+        const { data, error } = await supabase
+            .from('points')
+            .insert([{
+                title: title,
+                comment: comment,
+                lat: lat,
+                lng: lng,
+                user_id: currentUser.id
+            }])
+            .select();
+        
+        if (error) throw error;
+        
+        // Добавление в локальный массив
+        points.push(data[0]);
+        
+        // Центрирование карты на новой точке
+        map.setView([lat, lng], 15);
+        
+        // Очистка формы
+        document.getElementById('coord-lat').value = '';
+        document.getElementById('coord-lng').value = '';
+        document.getElementById('coord-title').value = '';
+        document.getElementById('coord-comment').value = '';
+        
+        // Перерисовка карты
+        renderMapData();
+        updateStatusMessage();
+        
+        hideModal('coords-modal');
+        
+    } catch (error) {
+        console.error('Ошибка сохранения точки:', error);
+        showError('Ошибка сохранения точки');
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Поиск по городу или координатам
+ */
+async function handleSearch() {
+    const query = document.getElementById('search-input').value.trim();
+    
+    if (!query) {
+        showError('Введите название города или координаты');
+        return;
+    }
+    
+    try {
+        showLoading(true);
+        
+        // Проверка, является ли запрос координатами
+        const coordMatch = query.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+        
+        if (coordMatch) {
+            // Поиск по координатам
+            const lat = parseFloat(coordMatch[1]);
+            const lng = parseFloat(coordMatch[2]);
             
-            // Add all points to map
-            AppState.mapData.points.forEach(point => {
-                addPointToMap(point);
-            });
+            if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                map.setView([lat, lng], 15);
+                document.getElementById('search-input').value = '';
+            } else {
+                showError('Координаты вне допустимого диапазона');
+            }
+        } else {
+            // Поиск по названию города через Nominatim
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
+            );
             
-            // Add all lines to map
-            AppState.mapData.lines.forEach(line => {
-                addLineToMap(line);
-            });
+            if (!response.ok) {
+                throw new Error('Ошибка поиска');
+            }
+            
+            const results = await response.json();
+            
+            if (results.length > 0) {
+                const result = results[0];
+                const lat = parseFloat(result.lat);
+                const lng = parseFloat(result.lon);
+                
+                map.setView([lat, lng], 12);
+                document.getElementById('search-input').value = '';
+            } else {
+                showError('Место не найдено');
+            }
         }
+        
     } catch (error) {
-        console.error('Error loading data:', error);
-        AppState.mapData = { points: [], lines: [] };
+        console.error('Ошибка поиска:', error);
+        showError('Ошибка поиска. Проверьте подключение к интернету');
+    } finally {
+        showLoading(false);
     }
 }
 
 /**
- * Export map data as JSON
+ * Центрировать карту
  */
-function exportData() {
-    const dataStr = JSON.stringify(AppState.mapData, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(dataBlob);
-    link.download = `map-data-${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-    
-    URL.revokeObjectURL(link.href);
+function centerMap() {
+    if (points.length > 0) {
+        const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+        map.fitBounds(bounds, { padding: [20, 20] });
+    } else {
+        map.setView([55.7558, 37.6176], 10);
+    }
 }
 
 /**
- * Import map data from JSON file
+ * Экспорт данных
  */
-function importData() {
-    document.getElementById('import-file').click();
+async function exportData() {
+    try {
+        const exportData = {
+            points: points,
+            lines: lines,
+            exported_at: new Date().toISOString(),
+            user: currentUser.email
+        };
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+            type: 'application/json'
+        });
+        
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `map-data-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+    } catch (error) {
+        console.error('Ошибка экспорта:', error);
+        showError('Ошибка экспорта данных');
+    }
 }
 
 /**
- * Handle file import
+ * Импорт данных
  */
-function handleFileImport(event) {
-    const file = event.target.files[0];
+async function importData(e) {
+    const file = e.target.files[0];
     if (!file) return;
     
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const importedData = JSON.parse(e.target.result);
-            
-            // Validate data structure
-            if (!importedData.points || !importedData.lines) {
-                throw new Error('Invalid data format');
-            }
-            
-            // Clear existing data
-            clearAllMapData();
-            
-            // Load imported data
-            AppState.mapData = importedData;
-            
-            // Add to map
-            AppState.mapData.points.forEach(point => {
-                addPointToMap(point);
-            });
-            
-            AppState.mapData.lines.forEach(line => {
-                addLineToMap(line);
-            });
-            
-            // Save to localStorage
-            saveMapData();
-            
-            alert('Data imported successfully');
-        } catch (error) {
-            console.error('Import error:', error);
-            alert('Failed to import data. Please check file format.');
+    try {
+        showLoading(true);
+        
+        const text = await file.text();
+        const data = JSON.parse(text);
+        
+        if (!data.points || !Array.isArray(data.points)) {
+            throw new Error('Неверный формат файла');
         }
-    };
-    
-    reader.readAsText(file);
-    event.target.value = ''; // Reset file input
+        
+        // Импорт точек
+        if (data.points.length > 0) {
+            const pointsToInsert = data.points.map(point => ({
+                title: point.title,
+                comment: point.comment || '',
+                lat: point.lat,
+                lng: point.lng,
+                user_id: currentUser.id
+            }));
+            
+            const { error: pointsError } = await supabase
+                .from('points')
+                .insert(pointsToInsert);
+            
+            if (pointsError) throw pointsError;
+        }
+        
+        // Импорт линий
+        if (data.lines && data.lines.length > 0) {
+            const linesToInsert = data.lines.map(line => ({
+                name: line.name,
+                point_ids: line.point_ids || [],
+                user_id: currentUser.id
+            }));
+            
+            const { error: linesError } = await supabase
+                .from('lines')
+                .insert(linesToInsert);
+            
+            if (linesError) throw linesError;
+        }
+        
+        // Перезагрузка данных
+        await loadData();
+        
+        // Очистка input
+        e.target.value = '';
+        
+    } catch (error) {
+        console.error('Ошибка импорта:', error);
+        showError('Ошибка импорта данных. Проверьте формат файла');
+    } finally {
+        showLoading(false);
+    }
 }
 
 /**
- * Clear all map data
+ * Очистить все данные
  */
-function clearAllMapData() {
-    // Remove all points from map
-    AppState.mapData.points.forEach(point => {
-        if (point.mapLayer) {
-            AppState.map.removeLayer(point.mapLayer);
-        }
-    });
+async function clearAllData() {
+    if (!confirm('Вы уверены, что хотите удалить все данные? Это действие нельзя отменить.')) {
+        return;
+    }
     
-    // Remove all lines from map
-    AppState.mapData.lines.forEach(line => {
-        if (line.mapLayer) {
-            AppState.map.removeLayer(line.mapLayer);
-        }
-    });
-    
-    // Clear data
-    AppState.mapData = { points: [], lines: [] };
+    try {
+        showLoading(true);
+        
+        // Удаление линий
+        const { error: linesError } = await supabase
+            .from('lines')
+            .delete()
+            .eq('user_id', currentUser.id);
+        
+        if (linesError) throw linesError;
+        
+        // Удаление точек
+        const { error: pointsError } = await supabase
+            .from('points')
+            .delete()
+            .eq('user_id', currentUser.id);
+        
+        if (pointsError) throw pointsError;
+        
+        // Очистка локальных данных
+        points = [];
+        lines = [];
+        selectedPoints = [];
+        
+        // Перерисовка карты
+        renderMapData();
+        updateStatusMessage();
+        
+    } catch (error) {
+        console.error('Ошибка очистки данных:', error);
+        showError('Ошибка очистки данных');
+    } finally {
+        showLoading(false);
+    }
 }
 
 /**
- * Delete a point
+ * Обновить сообщение статуса
  */
-function deletePoint(pointId) {
-    if (confirm('Are you sure you want to delete this point?')) {
-        const pointIndex = AppState.mapData.points.findIndex(p => p.id === pointId);
-        if (pointIndex !== -1) {
-            const point = AppState.mapData.points[pointIndex];
-            
-            // Remove from map
-            if (point.mapLayer) {
-                AppState.map.removeLayer(point.mapLayer);
-            }
-            
-            // Remove from data
-            AppState.mapData.points.splice(pointIndex, 1);
-            saveMapData();
+function updateStatusMessage() {
+    const statusElement = document.getElementById('status-message');
+    if (statusElement) {
+        statusElement.textContent = `Загружено ${points.length} точек и ${lines.length} линий`;
+    }
+}
+
+/**
+ * Показать модальное окно
+ */
+function showModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.add('fade-in');
+        
+        // Фокус на первом поле ввода
+        const firstInput = modal.querySelector('input, textarea');
+        if (firstInput) {
+            setTimeout(() => firstInput.focus(), 100);
         }
     }
 }
 
 /**
- * Delete a line
+ * Скрыть модальное окно
  */
-function deleteLine(lineId) {
-    if (confirm('Are you sure you want to delete this power line?')) {
-        const lineIndex = AppState.mapData.lines.findIndex(l => l.id === lineId);
-        if (lineIndex !== -1) {
-            const line = AppState.mapData.lines[lineIndex];
-            
-            // Remove from map
-            if (line.mapLayer) {
-                AppState.map.removeLayer(line.mapLayer);
-            }
-            
-            // Remove from data
-            AppState.mapData.lines.splice(lineIndex, 1);
-            saveMapData();
-        }
+function hideModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('fade-in');
     }
 }
 
 /**
- * Edit a point (simplified implementation)
+ * Показать ошибку входа
  */
-function editPoint(pointId) {
-    const point = AppState.mapData.points.find(p => p.id === pointId);
-    if (point) {
-        const newTitle = prompt('Enter new title:', point.title);
-        if (newTitle !== null && newTitle.trim()) {
-            const newNote = prompt('Enter new note:', point.note);
-            if (newNote !== null) {
-                point.title = newTitle.trim();
-                point.note = newNote.trim();
-                
-                // Update popup
-                point.mapLayer.setPopupContent(createPointPopup(point));
-                saveMapData();
-            }
-        }
+function showLoginError(message) {
+    const errorElement = document.getElementById('login-error');
+    if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
     }
 }
 
 /**
- * Edit a line (simplified implementation)
+ * Показать ошибку в модальном окне
  */
-function editLine(lineId) {
-    const line = AppState.mapData.lines.find(l => l.id === lineId);
-    if (line) {
-        const newLabel = prompt('Enter new label:', line.label);
-        if (newLabel !== null && newLabel.trim()) {
-            line.label = newLabel.trim();
-            
-            // Update popup
-            line.mapLayer.setPopupContent(createLinePopup(line));
-            saveMapData();
-        }
+function showError(message) {
+    const errorMessageElement = document.getElementById('error-message');
+    if (errorMessageElement) {
+        errorMessageElement.textContent = message;
+        showModal('error-modal');
     }
 }
 
 /**
- * Initialize application
+ * Показать/скрыть индикатор загрузки
  */
-function initApp() {
-    // Set up login form event listener
-    document.getElementById('login-form').addEventListener('submit', handleLogin);
-    
-    // Set up other event listeners (only available after login)
-    document.getElementById('signout-btn').addEventListener('click', signOut);
-    
-    // Tool buttons
-    document.getElementById('add-point-btn').addEventListener('click', () => setTool('point'));
-    document.getElementById('draw-line-btn').addEventListener('click', () => setTool('line'));
-    document.getElementById('clear-selection-btn').addEventListener('click', clearSelection);
-    
-    // Form buttons
-    document.getElementById('save-point-btn').addEventListener('click', savePoint);
-    document.getElementById('cancel-point-btn').addEventListener('click', cancelPointForm);
-    document.getElementById('save-line-btn').addEventListener('click', saveLine);
-    document.getElementById('cancel-line-btn').addEventListener('click', cancelLineForm);
-    
-    // Export/Import buttons
-    document.getElementById('export-btn').addEventListener('click', exportData);
-    document.getElementById('import-btn').addEventListener('click', importData);
-    document.getElementById('import-file').addEventListener('change', handleFileImport);
-    
-    // Form submission handlers
-    document.getElementById('point-title').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') savePoint();
-    });
-    
-    document.getElementById('line-label').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') saveLine();
-    });
-    
-    // Show login screen initially
-    showLoginScreen();
+function showLoading(show) {
+    const loadingElement = document.getElementById('loading-indicator');
+    if (loadingElement) {
+        loadingElement.style.display = show ? 'flex' : 'none';
+    }
 }
-
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', initApp);
-
-// Make functions globally available for popup buttons
-window.deletePoint = deletePoint;
-window.deleteLine = deleteLine;
-window.editPoint = editPoint;
-window.editLine = editLine;
 

@@ -1,87 +1,172 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex">
-    <title>Internal Map Tool</title>
+    <title>Внутренний инструмент карт</title>
     
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
-          crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Login Screen -->
-    <div id="login-screen" class="login-container">
-        <div class="login-box">
-            <h1>Internal Map Tool</h1>
-            <p>Please sign in to continue</p>
+    <!-- Экран входа -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-container">
+            <h1>Внутренний инструмент карт</h1>
+            <p>Пожалуйста, войдите в систему</p>
+            
             <form id="login-form" class="login-form">
-                <input type="text" id="username" placeholder="Username" required>
-                <input type="password" id="password" placeholder="Password" required>
-                <button type="submit" id="login-btn" class="login-btn">Login</button>
+                <input type="email" id="email" placeholder="E-mail" required>
+                <input type="password" id="password" placeholder="Пароль" required>
+                <button type="submit">Войти</button>
             </form>
+            
             <div id="login-error" class="error-message" style="display: none;"></div>
         </div>
     </div>
 
-    <!-- Main Application -->
-    <div id="main-app" class="main-container" style="display: none;">
-        <!-- Header -->
+    <!-- Основное приложение -->
+    <div id="main-app" class="main-app" style="display: none;">
+        <!-- Заголовок -->
         <header class="app-header">
             <div class="header-left">
-                <h1>Internal Map Tool</h1>
-                <span id="user-role" class="role-badge"></span>
-            </div>
-            <div class="header-right">
+                <h1>Внутренний инструмент карт</h1>
                 <span id="user-email" class="user-info"></span>
-                <button id="export-btn" class="action-btn">Export</button>
-                <button id="import-btn" class="action-btn">Import</button>
-                <button id="signout-btn" class="signout-btn">Sign Out</button>
+            </div>
+            
+            <div class="header-center">
+                <div class="search-container">
+                    <input type="text" id="search-input" placeholder="Поиск города или координат (широта,долгота)">
+                    <button id="search-btn">Поиск</button>
+                </div>
+            </div>
+            
+            <div class="header-right">
+                <button id="export-btn">Экспорт</button>
+                <button id="import-btn">Импорт</button>
+                <input type="file" id="import-file" accept=".json" style="display: none;">
+                <button id="signout-btn">Выйти</button>
             </div>
         </header>
 
-        <!-- Map Container -->
-        <div id="map" class="map-container"></div>
-
-        <!-- Controls Panel -->
-        <div id="controls-panel" class="controls-panel">
-            <div class="control-group">
-                <h3>Map Tools</h3>
-                <button id="add-point-btn" class="tool-btn active">Add Point</button>
-                <button id="draw-line-btn" class="tool-btn">Draw Power Line</button>
-                <button id="clear-selection-btn" class="tool-btn">Clear Selection</button>
-            </div>
+        <!-- Основной контент -->
+        <div class="main-content">
+            <!-- Карта -->
+            <div id="map" class="map-container"></div>
             
-            <div class="control-group" id="point-form" style="display: none;">
-                <h3>Point Details</h3>
-                <input type="text" id="point-title" placeholder="Point title" maxlength="100">
-                <textarea id="point-note" placeholder="Notes" maxlength="500"></textarea>
-                <button id="save-point-btn" class="save-btn">Save Point</button>
-                <button id="cancel-point-btn" class="cancel-btn">Cancel</button>
-            </div>
-            
-            <div class="control-group" id="line-form" style="display: none;">
-                <h3>Power Line Details</h3>
-                <input type="text" id="line-label" placeholder="Line label" maxlength="100">
-                <p class="instruction">Click two points on the map to draw a power line</p>
-                <button id="save-line-btn" class="save-btn" disabled>Save Line</button>
-                <button id="cancel-line-btn" class="cancel-btn">Cancel</button>
+            <!-- Панель управления -->
+            <div class="control-panel">
+                <div class="status-bar">
+                    <span id="status-message">Загружено 0 точек и 0 линий</span>
+                </div>
+                
+                <div class="map-tools">
+                    <h3>ИНСТРУМЕНТЫ КАРТЫ</h3>
+                    <button id="add-point-btn" class="tool-btn primary">Добавить точку</button>
+                    <button id="draw-line-btn" class="tool-btn secondary">Нарисовать линию</button>
+                    <button id="clear-selection-btn" class="tool-btn danger">Очистить выбор</button>
+                </div>
+                
+                <div class="quick-actions">
+                    <h3>БЫСТРЫЕ ДЕЙСТВИЯ</h3>
+                    <button id="add-by-coords-btn" class="action-btn">Добавить по координатам</button>
+                    <button id="center-map-btn" class="action-btn">Центрировать карту</button>
+                    <button id="clear-all-btn" class="action-btn danger">Очистить все данные</button>
+                </div>
             </div>
         </div>
-
-        <!-- Hidden file input for import -->
-        <input type="file" id="import-file" accept=".json" style="display: none;">
     </div>
 
+    <!-- Модальное окно для добавления точки -->
+    <div id="point-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Добавить точку</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="point-title" placeholder="Название точки" required>
+                <textarea id="point-comment" placeholder="Комментарий"></textarea>
+                <div class="modal-actions">
+                    <button id="save-point-btn" class="btn primary">Сохранить точку</button>
+                    <button id="cancel-point-btn" class="btn secondary">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для добавления по координатам -->
+    <div id="coords-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Добавить точку по координатам</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="number" id="coord-lat" placeholder="Широта" step="any" required>
+                <input type="number" id="coord-lng" placeholder="Долгота" step="any" required>
+                <input type="text" id="coord-title" placeholder="Название точки" required>
+                <textarea id="coord-comment" placeholder="Комментарий"></textarea>
+                <div class="modal-actions">
+                    <button id="save-coord-point-btn" class="btn primary">Добавить точку</button>
+                    <button id="cancel-coord-btn" class="btn secondary">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для линии -->
+    <div id="line-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Создать линию ЛЭП</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Выбрано точек: <span id="selected-points-count">0</span></p>
+                <input type="text" id="line-name" placeholder="Название линии" required>
+                <div class="modal-actions">
+                    <button id="save-line-btn" class="btn primary">Сохранить линию</button>
+                    <button id="finish-line-btn" class="btn secondary">Завершить выбор</button>
+                    <button id="cancel-line-btn" class="btn secondary">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для ошибок -->
+    <div id="error-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Ошибка</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="error-message"></p>
+                <div class="modal-actions">
+                    <button id="error-ok-btn" class="btn primary">ОК</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Индикатор загрузки -->
+    <div id="loading-indicator" class="loading-indicator" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p>Загрузка...</p>
+        </div>
+    </div>
+
+    <!-- Supabase JS -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    
     <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
-            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
-            crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <!-- Custom JS -->
     <script src="script.js"></script>
