@@ -1,0 +1,92 @@
+{
+  "points": [
+    {
+      "id": "example_point_1",
+      "title": "Main Substation",
+      "note": "Primary electrical substation serving the downtown area. 138kV capacity with backup generators.",
+      "lat": 40.7128,
+      "lng": -74.0060,
+      "timestamp": 1640995200000
+    },
+    {
+      "id": "example_point_2",
+      "title": "Distribution Center A",
+      "note": "Secondary distribution point for residential areas. 25kV step-down transformer.",
+      "lat": 40.7589,
+      "lng": -73.9851,
+      "timestamp": 1640995260000
+    },
+    {
+      "id": "example_point_3",
+      "title": "Industrial Complex",
+      "note": "High-voltage connection for manufacturing facility. Requires 480V three-phase power.",
+      "lat": 40.6892,
+      "lng": -74.0445,
+      "timestamp": 1640995320000
+    },
+    {
+      "id": "example_point_4",
+      "title": "Emergency Backup Station",
+      "note": "Backup power facility with diesel generators. Activated during grid failures.",
+      "lat": 40.7505,
+      "lng": -73.9934,
+      "timestamp": 1640995380000
+    },
+    {
+      "id": "example_point_5",
+      "title": "Residential Hub",
+      "note": "Local distribution hub serving 500+ residential units. Smart meter integration.",
+      "lat": 40.7282,
+      "lng": -73.9942,
+      "timestamp": 1640995440000
+    }
+  ],
+  "lines": [
+    {
+      "id": "example_line_1",
+      "label": "Main Transmission Line",
+      "points": [
+        {"lat": 40.7128, "lng": -74.0060},
+        {"lat": 40.7589, "lng": -73.9851}
+      ],
+      "timestamp": 1640995500000
+    },
+    {
+      "id": "example_line_2",
+      "label": "Industrial Feeder",
+      "points": [
+        {"lat": 40.7128, "lng": -74.0060},
+        {"lat": 40.6892, "lng": -74.0445}
+      ],
+      "timestamp": 1640995560000
+    },
+    {
+      "id": "example_line_3",
+      "label": "Emergency Backup Connection",
+      "points": [
+        {"lat": 40.7589, "lng": -73.9851},
+        {"lat": 40.7505, "lng": -73.9934}
+      ],
+      "timestamp": 1640995620000
+    },
+    {
+      "id": "example_line_4",
+      "label": "Residential Distribution",
+      "points": [
+        {"lat": 40.7589, "lng": -73.9851},
+        {"lat": 40.7282, "lng": -73.9942}
+      ],
+      "timestamp": 1640995680000
+    },
+    {
+      "id": "example_line_5",
+      "label": "Cross-Connect Line",
+      "points": [
+        {"lat": 40.7505, "lng": -73.9934},
+        {"lat": 40.7282, "lng": -73.9942}
+      ],
+      "timestamp": 1640995740000
+    }
+  ]
+}
+
